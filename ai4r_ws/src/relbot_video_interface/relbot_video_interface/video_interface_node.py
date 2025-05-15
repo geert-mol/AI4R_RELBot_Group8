@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
+# test the link
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Point
 import gi
 import numpy as np
 import cv2
+from ultralytics import YOLO
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
+
 
 class VideoInterfaceNode(Node):
     def __init__(self):
@@ -39,6 +42,8 @@ class VideoInterfaceNode(Node):
         self.timer = self.create_timer(1.0 / 30.0, self.on_timer)
         self.get_logger().info('VideoInterfaceNode initialized, streaming at 30Hz')
 
+        self.model = YOLO("yolov8n.pt")
+
     def on_timer(self):
         # Pull the latest frame from the GStreamer appsink
         sample = self.sink.emit('pull-sample')
@@ -59,26 +64,40 @@ class VideoInterfaceNode(Node):
         frame = np.frombuffer(mapinfo.data, np.uint8).reshape(height, width, 3)
         buf.unmap(mapinfo)
 
-        # Display the raw input frame for debugging
-        cv2.imshow('Input Stream', cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-        cv2.waitKey(1)
+        results = self.model(frame)
 
-        # TODO: Insert detection/tracking logic here to compute object position
+        for r in results:
+            best_person = None
+            max_area = 0
 
-        # TODO: Insert detection/tracking logic here to compute object position
-        # For demonstration, here we are publishing a dummy Point at origin
-                # Compute and publish object position:
-        # x = horizontal center coordinate of the object
-        # y = unused (flat-ground assumption)
-        # z = object area (controller caps at 10000 to stop robot when object is too large)
-        msg = Point()
-        msg.x = 200.0  # object center x-coordinate
-        msg.y = 0.0  # y-coordinate unused
-        msg.z = 10001.0  # object area; >10000 indicates 'too close'
-        self.position_pub.publish(msg)
-        # To adjust robot behavior, apply a scaling factor to 'z' (e.g., couple with depth estimation)
-        # Log at debug level if needed:
-        # self.get_logger().debug(f'Published position: ({msg.x}, {msg.y}, {msg.z})')
+            for box in r.boxes:
+                cls = int(box.cls[0])
+                if self.model.names[cls] == 'person':
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    area = (x2 - x1) * (y2 - y1)
+
+                    if area > max_area:
+                        max_area = area
+                        best_person = (x1, y1, x2, y2)
+
+            if best_person:
+                x1, y1, x2, y2 = best_person
+                center_x = (x1 + x2) / 2
+
+                msg = Point()
+                msg.x = float(center_x)
+                msg.y = 0.0
+                msg.z = 10001.0  # Used to infer distance
+
+                self.position_pub.publish(msg)
+                self.get_logger().debug(f'Published: ({msg.x:.1f}, area={msg.z:.1f})')
+
+                # Optional: draw bounding box on stream
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.circle(frame_bgr, (int(center_x), y2), 5, (0, 0, 255), -1)
+                cv2.imshow('Input Stream', frame_bgr)
+                cv2.waitKey(1)
 
     def destroy_node(self):
         # Cleanup GStreamer resources on shutdown
@@ -96,6 +115,7 @@ def main(args=None):
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
