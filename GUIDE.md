@@ -5,7 +5,7 @@
 
 # Step 2: SSH into RELBot with IP found on screen:
 
-`ssh -X pi@10.1.1.209`
+`ssh -X pi@192.168.0.103`
 
 # Step 3: Start G Streamer in SSH terminal
 
@@ -16,7 +16,7 @@ image/jpeg,width=320,height=240,framerate=30/1 ! \
 jpegdec ! videoconvert ! \
 x264enc tune=zerolatency bitrate=800 speed-preset=ultrafast ! \
 rtph264pay config-interval=1 pt=96 ! \
-udpsink host=10.1.1.244 port=5000
+udpsink host=192.168.0.101 port=5000
 ```
 
 # Step 4: Start other G Streamer (non-SSH)
@@ -25,14 +25,14 @@ udpsink host=10.1.1.244 port=5000
 gst-launch-1.0 -v udpsrc port=5000 caps="application/x-rtp,media=video,encoding-name=H264,payload=96" ! rtph264depay ! avdec_h264 ! autovideosink
 ```
 
-# Step 5: Start DEMO script
+# Step 5: Start DEMO script (in SSH)
 ```commandline
 source ~/ai4r_ws/install/setup.bash
 cd ~/ai4r_ws/
 sudo ./build/demo/demo 
 ```
 
-# Step 6: Start sequence controller
+# Step 6: Start sequence controller (in SSH)
 ```commandline
 source ~/ai4r_ws/install/setup.bash
 ros2 launch sequence_controller sequence_controller.launch.py
