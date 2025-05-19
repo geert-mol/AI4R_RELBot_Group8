@@ -113,8 +113,14 @@ class VideoInterfaceNode(Node):
                     align_corners=False,
                 ).squeeze()
                 depth_map = prediction.cpu().numpy()
-        
-        
+
+            depth_min = depth_map.min()
+            depth_max = depth_map.max()
+            depth_vis = (255* (depth_map - depth_min) / (depth_max - depth_min)).astype(np.uint8)
+
+
+        self.found_target=False
+
         if results[0].boxes and results[0].boxes.id is not None:
             boxes = results[0].boxes.xywh.cpu()
             track_ids = results[0].boxes.id.int().cpu().tolist()
@@ -158,24 +164,26 @@ class VideoInterfaceNode(Node):
         if not self.found_target:
             self.target_id=None
             self.target_cp = self.image_cp
+
+        cv2.putText(annotated_frame, f'Target at: (x={self.target_cp.x:.1f} y={self.target_cp.y:.1f}, d={self.target_cp.z:.1f})', (0,int(height-10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 2)
+
+        #Publish target inputs to topic
+        msg = Point()
+        msg.x = float(self.target_cp.x)
+        msg.y = 0.0
         
+        # do or do not follow target based on distance
+        msg.z = float(self.image_cp.z)
+        # # IDK yet how the z of the topic exactly works
+        # msg.z = float(self.target_cp.z/600*1001)
         
-        self.get_logger().debug(f'Target at: (x={self.target_cp.x:.1f} y={self.target_cp.y:.1f}, relative distance={self.target_cp.z:.1f})')    
-        # #Publish target inputs to topic
-        # msg = Point()
-        # msg.x = float(self.target_cp.x)
-        # msg.y = 0.0
-        
-        # # do or do not follow target based on distance
-        # msg.z = float(self.image_cp.z)
-        # # # IDK yet how the z of the topic exactly works
-        # # msg.z = float(self.target_cp.z/600*1001)
-        
-        # self.position_pub.publish(msg)
+        self.position_pub.publish(msg)
         # self.get_logger().debug(f'Published: ({msg.x:.1f}, area={msg.z:.1f})')
         
         frame_bgr = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR)
         cv2.imshow('Input Stream', frame_bgr)
+        cv2.imshow('depth map',depth_vis)
         cv2.waitKey(1)
 
     def destroy_node(self):
