@@ -9,6 +9,7 @@ import cv2
 from ultralytics import YOLO
 from ultralytics.utils import ROOT
 from collections import defaultdict
+import torch
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
@@ -44,8 +45,35 @@ class VideoInterfaceNode(Node):
         self.timer = self.create_timer(1.0 / 30.0, self.on_timer)
         self.get_logger().info('VideoInterfaceNode initialized, streaming at 30Hz')
         self.track_history = defaultdict(lambda: [])
-        self.model = YOLO("./weights.pt")
-
+        
+        #model selection
+        #self.model = YOLO("./weights.pt")
+        self.model = YOLO("yolov8n.pt")
+        
+        #used to switch between use of MIDAS model
+        self.SIDE_use = True
+        
+        if self.SIDE_use:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            #SIDE model MIDAS [not sure if it works offline]
+            self.midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small") 
+            self.midas.eval()
+            self.midas.to(self.device)
+            
+            midastransforms=torch.hub.load("intel-isl/MiDaS", "transforms")
+            self.transform=midastransforms.small_transform
+        
+        #Used for tracking single target
+        self.target_id=None
+        self.found_target=False
+        self.target_cp=Point()
+        
+        #image_centerpoint for robot to stop moving
+        self.image_cp=Point()
+        self.image_cp.x=200.0  #idk what the exact value is should be updated.
+        self.image_cp.z=1001.0
+    
+        
     def on_timer(self):
         # Pull the latest frame from the GStreamer appsink
         sample = self.sink.emit('pull-sample')
@@ -66,83 +94,86 @@ class VideoInterfaceNode(Node):
         frame = np.frombuffer(mapinfo.data, np.uint8).reshape(height, width, 3)
         buf.unmap(mapinfo)
 
-        # Run the tracker
-        #results = self.model(frame)
-
-        # tracker_config = str(ROOT / 'trackers/cfg/bytetrack.yaml')
-        results = self.model.track(frame, tracker="bytetrack.yaml", persist=True, conf=0.4, iou=0.1)
+        #Yolo Model with ByteTrack tracker
+        # # tracker_config = str(ROOT / 'trackers/cfg/bytetrack.yaml')
+        # results = self.model.track(frame, tracker="bytetrack.yaml", persist=True, conf=0.4, iou=0.1)
+        results = self.model.track(frame, tracker="bytetrack.yaml", persist=True, conf=0.4, iou=0.1,classes=[0]) #Should only track a people
         annotated_frame = results[0].plot()
 
-        #
-        # # Draw tracking results
-        #if results and results[0].boxes.id is not None:
-        #     boxes = results[0].boxes.xyxy.cpu().numpy()  # [x1, y1, x2, y2]
-        #     ids = results[0].boxes.id.cpu().numpy()  # track IDs
-        #
-        #     for box, obj_id in zip(boxes, ids):
-        #         x1, y1, x2, y2 = map(int, box)
-        #         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        #         cv2.putText(frame, f'ID: {int(obj_id)}', (x1, y1 - 10),
-        #                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        #
-        # # Show the frame
-        #cv2.imshow('Tracker Visualization', frame)
-        #cv2.waitKey(1)  # Needed for OpenCV window refresh
-
-        # for r in results:
-        # #     best_person = None
-        # #     max_area = 0
-        # #
-        #      for box in r.boxes:
-        #          cls = int(box.cls[0])
-        # #         print('Class found: ', self.model.names[cls])
-        #          if self.model.names[cls] == 'Hardhat':
-        #             x1, y1, x2, y2 = map(int, box.xyxy[0])
-        #             msg = Point()
-        #             msg.x = float((x1 + x2) / 2)
-        #             msg.y = 0.0
-        #             msg.z = 10001.0  # Used to infer distance
-        #
-        #             self.position_pub.publish(msg)
-        #             self.get_logger().debug(f'Published: ({msg.x:.1f}, area={msg.z:.1f})')
-
-
-        #             x1, y1, x2, y2 = map(int, box.xyxy[0])
-        #             area = (x2 - x1) * (y2 - y1)
-        #
-        #             if area > max_area:
-        #                 max_area = area
-        #                 best_person = (x1, y1, x2, y2)
-        #
-        #     if best_person:
-        #         x1, y1, x2, y2 = best_person
-        #         center_x = (x1 + x2) / 2
-        #
-        #         msg = Point()
-        #         msg.x = float(center_x)
-        #         msg.y = 0.0
-        #         msg.z = 10001.0  # Used to infer distance
-        #
-        #         self.position_pub.publish(msg)
-        #         self.get_logger().debug(f'Published: ({msg.x:.1f}, area={msg.z:.1f})')
-        #
-        #         # Optional: draw bounding box on stream
-        #         frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        #         cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        #         cv2.circle(frame_bgr, (int(center_x), y2), 5, (0, 0, 255), -1)
-
+        #SIDE depthmap
+        if self.SIDE_use:
+            input_batch = self.transform(frame).to(self.device)
+            with torch.no_grad():
+                prediction = self.midas(input_batch)
+                # Resize back to original size
+                prediction = torch.nn.functional.interpolate(
+                    prediction.unsqueeze(1),
+                    size=frame.shape[:2],
+                    mode="bicubic",
+                    align_corners=False,
+                ).squeeze()
+                depth_map = prediction.cpu().numpy()
+        
+        
         if results[0].boxes and results[0].boxes.id is not None:
             boxes = results[0].boxes.xywh.cpu()
             track_ids = results[0].boxes.id.int().cpu().tolist()
+            
             for box, track_id in zip(boxes, track_ids):
                 x, y, w, h = box
+                
+                #check if there is a target and whether current id is target.
+                if self.target_id == None:
+                    self.target_id = track_id
+                    
+                if track_id == self.target_id:
+                    self.found_target=True
+                    
+                    #Set centerpoint for target iD
+                    self.target_cp.x = x
+                    self.target_cp.y = y
+                    #indicate target
+                    cv2.putText(annotated_frame, f'Target ID: {int(track_id)}', (int(x - 0.5*w), int(y - 0.5*h - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                    
+                    #Depth estimate
+                    if self.SIDE_use:
+                        #Using SIDE depthmap
+                        relative_distance = np.median(depth_map[int(y-0.5*h):int(y+0.5*h), int(x-0.5*w):int(x+0.5*w)])
+                        self.target_cp.z = relative_distance
+                    else:
+                        #Using box size
+                        box_size=w*h
+                        self.target_cp.z=box_size
+                    
+                    
                 track = self.track_history[track_id]
                 track.append((float(x), float(y)))
                 if len(track) > 100:
                     track.pop(0)
                 points = np.hstack(track).astype(np.int32).reshape((-1,1,2))
                 cv2.polylines(annotated_frame, [points], isClosed=False, color=(230,230,230), thickness=2)
-
+        
+        #reset target if target lost
+        if not self.found_target:
+            self.target_id=None
+            self.target_cp = self.image_cp
+        
+        
+        self.get_logger().debug(f'Target at: (x={self.target_cp.x:.1f} y={self.target_cp.y:.1f}, relative distance={self.target_cp.z:.1f})')    
+        # #Publish target inputs to topic
+        # msg = Point()
+        # msg.x = float(self.target_cp.x)
+        # msg.y = 0.0
+        
+        # # do or do not follow target based on distance
+        # msg.z = float(self.image_cp.z)
+        # # # IDK yet how the z of the topic exactly works
+        # # msg.z = float(self.target_cp.z/600*1001)
+        
+        # self.position_pub.publish(msg)
+        # self.get_logger().debug(f'Published: ({msg.x:.1f}, area={msg.z:.1f})')
+        
         frame_bgr = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR)
         cv2.imshow('Input Stream', frame_bgr)
         cv2.waitKey(1)
