@@ -70,8 +70,8 @@ class VideoInterfaceNode(Node):
         
         #image_centerpoint for robot to stop moving
         self.image_cp=Point()
-        self.image_cp.x=200.0  #idk what the exact value is should be updated.
-        self.image_cp.z=1001.0
+        self.image_cp.x=180.0  #idk what the exact value is should be updated.
+        self.image_cp.z=10001.0
     
         
     def on_timer(self):
@@ -138,19 +138,21 @@ class VideoInterfaceNode(Node):
                     #Set centerpoint for target iD
                     self.target_cp.x = x
                     self.target_cp.y = y
+                    self.target_cp.z = w * 70
+
                     #indicate target
                     cv2.putText(annotated_frame, f'Target ID: {int(track_id)}', (int(x - 0.5*w), int(y - 0.5*h - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                     
                     #Depth estimate
-                    if self.SIDE_use:
-                        #Using SIDE depthmap
-                        relative_distance = np.median(depth_map[int(y-0.5*h):int(y+0.5*h), int(x-0.5*w):int(x+0.5*w)])
-                        self.target_cp.z = relative_distance
-                    else:
-                        #Using box size
-                        box_size=w*h
-                        self.target_cp.z=box_size
+                    # if self.SIDE_use:
+                    #     #Using SIDE depthmap
+                    #     relative_distance = np.median(depth_map[int(y-0.5*h):int(y+0.5*h), int(x-0.5*w):int(x+0.5*w)])
+                    #     self.target_cp.z = relative_distance
+                    # else:
+                    #     #Using box size
+                    #     box_size=w*h
+                    #     self.target_cp.z=box_size
                     
                     
                 track = self.track_history[track_id]
@@ -163,7 +165,8 @@ class VideoInterfaceNode(Node):
         #reset target if target lost
         if not self.found_target:
             self.target_id=None
-            self.target_cp = self.image_cp
+            self.target_cp.x= 180.0
+            self.target_cp.z= 10010.0
 
         cv2.putText(annotated_frame, f'Target at: (x={self.target_cp.x:.1f} y={self.target_cp.y:.1f}, d={self.target_cp.z:.1f})', (0,int(height-10)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 2)
@@ -174,9 +177,10 @@ class VideoInterfaceNode(Node):
         msg.y = 0.0
         
         # do or do not follow target based on distance
-        msg.z = float(self.image_cp.z)
+        msg.z = float(self.target_cp.z)
+        #msg.z = 10001.0
         # # IDK yet how the z of the topic exactly works
-        # msg.z = float(self.target_cp.z/600*1001)
+        # msg.z = floatS(self.target_cp.z/600*1001)
         
         self.position_pub.publish(msg)
         # self.get_logger().debug(f'Published: ({msg.x:.1f}, area={msg.z:.1f})')
