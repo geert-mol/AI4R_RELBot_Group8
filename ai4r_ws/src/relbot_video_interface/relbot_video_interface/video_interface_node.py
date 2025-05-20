@@ -10,7 +10,8 @@ from ultralytics import YOLO
 from ultralytics.utils import ROOT
 from collections import defaultdict
 import torch
-
+import os 
+import timedate
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
@@ -63,6 +64,14 @@ class VideoInterfaceNode(Node):
             midastransforms=torch.hub.load("intel-isl/MiDaS", "transforms")
             self.transform=midastransforms.small_transform
         
+        #init image record [EDIT run nummer]
+        self.store=True
+        if self.store:
+            run = "run_1"
+            self.folder = os.path.join("saved_frames",run)
+            os.makedirs(self.folder,exist_ok=True)
+            self.frame_counter=0
+        
         #Used for tracking single target
         self.target_id=None
         self.found_target=False
@@ -94,6 +103,15 @@ class VideoInterfaceNode(Node):
         frame = np.frombuffer(mapinfo.data, np.uint8).reshape(height, width, 3)
         buf.unmap(mapinfo)
 
+        
+        #store frame every 5 frames
+        if self.store:
+            if self.frame_counter%5==0:
+                og_frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                save_filename= os.path.join(self.folder,f"frame_{self.frame_counter:05d}.png")
+                cv2.imwrite(save_filename,og_frame_bgr)
+            self.frame_counter +=1
+        
         #Yolo Model with ByteTrack tracker
         # # tracker_config = str(ROOT / 'trackers/cfg/bytetrack.yaml')
         # results = self.model.track(frame, tracker="bytetrack.yaml", persist=True, conf=0.4, iou=0.1)
