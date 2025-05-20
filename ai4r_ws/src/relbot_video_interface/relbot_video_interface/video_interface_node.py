@@ -10,8 +10,7 @@ from ultralytics import YOLO
 from ultralytics.utils import ROOT
 from collections import defaultdict
 import torch
-import os 
-import timedate
+import os
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
 
@@ -49,10 +48,12 @@ class VideoInterfaceNode(Node):
         
         #model selection
         #self.model = YOLO("./weights.pt")
-        self.model = YOLO("yolov8n.pt")
+        # self.model = YOLO("yolov8n.pt")
+
+        self.model = YOLO("./with-dropout.pt")
         
         #used to switch between use of MIDAS model
-        self.SIDE_use = True
+        self.SIDE_use = False
         
         if self.SIDE_use:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -65,7 +66,7 @@ class VideoInterfaceNode(Node):
             self.transform=midastransforms.small_transform
         
         #init image record [EDIT run nummer]
-        self.store=True
+        self.store=False
         if self.store:
             run = "run_1"
             self.folder = os.path.join("saved_frames",run)
@@ -106,7 +107,7 @@ class VideoInterfaceNode(Node):
         
         #store frame every 5 frames
         if self.store:
-            if self.frame_counter%5==0:
+            if self.frame_counter%1==0:
                 og_frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 save_filename= os.path.join(self.folder,f"frame_{self.frame_counter:05d}.png")
                 cv2.imwrite(save_filename,og_frame_bgr)
@@ -114,8 +115,8 @@ class VideoInterfaceNode(Node):
         
         #Yolo Model with ByteTrack tracker
         # # tracker_config = str(ROOT / 'trackers/cfg/bytetrack.yaml')
-        # results = self.model.track(frame, tracker="bytetrack.yaml", persist=True, conf=0.4, iou=0.1)
-        results = self.model.track(frame, tracker="bytetrack.yaml", persist=True, conf=0.4, iou=0.1,classes=[0]) #Should only track a people
+        results = self.model.track(frame, tracker="bytetrack.yaml", persist=True, conf=0.4, iou=0.1)
+        # results = self.model.track(frame, tracker="bytetrack.yaml", persist=True, conf=0.4, iou=0.1,classes=[0]) #Should only track a people
         annotated_frame = results[0].plot()
 
         #SIDE depthmap
@@ -195,8 +196,8 @@ class VideoInterfaceNode(Node):
         msg.y = 0.0
         
         # do or do not follow target based on distance
-        msg.z = float(self.target_cp.z)
-        #msg.z = 10001.0
+        # msg.z = float(self.target_cp.z)
+        msg.z = 10010.0
         # # IDK yet how the z of the topic exactly works
         # msg.z = floatS(self.target_cp.z/600*1001)
         
@@ -205,7 +206,8 @@ class VideoInterfaceNode(Node):
         
         frame_bgr = cv2.cvtColor(annotated_frame, cv2.COLOR_RGB2BGR)
         cv2.imshow('Input Stream', frame_bgr)
-        cv2.imshow('depth map',depth_vis)
+        # if self.SIDE_use:
+        #     cv2.imshow('depth map',depth_vis)
         cv2.waitKey(1)
 
     def destroy_node(self):
