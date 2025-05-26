@@ -48,9 +48,9 @@ class VideoInterfaceNode(Node):
         
         #model selection
         #self.model = YOLO("./weights.pt")
-        # self.model = YOLO("yolov8n.pt")
+        self.model = YOLO("yolov8n.pt")
 
-        self.model = YOLO("./with-dropout.pt")
+        # self.model = YOLO("./with-dropout.pt")
         
         #used to switch between use of MIDAS model
         self.SIDE_use = False
@@ -66,9 +66,9 @@ class VideoInterfaceNode(Node):
             self.transform=midastransforms.small_transform
         
         #init image record [EDIT run nummer]
-        self.store=False
+        self.store=True
         if self.store:
-            run = "run_1"
+            run = "run_4"
             self.folder = os.path.join("saved_frames",run)
             os.makedirs(self.folder,exist_ok=True)
             self.frame_counter=0
@@ -196,8 +196,8 @@ class VideoInterfaceNode(Node):
         msg.y = 0.0
         
         # do or do not follow target based on distance
-        # msg.z = float(self.target_cp.z)
-        msg.z = 10010.0
+        msg.z = float(self.target_cp.z)
+        # msg.z = 10010.0
         # # IDK yet how the z of the topic exactly works
         # msg.z = floatS(self.target_cp.z/600*1001)
         

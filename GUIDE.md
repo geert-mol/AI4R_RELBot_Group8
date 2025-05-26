@@ -1,11 +1,11 @@
 # Step 1: Set RELBot ID in bashrc in docker:
 
-`echo 'export ROS_DOMAIN_ID=<RELBot_ID>' >> ~/.bashrc`
+`echo 'export ROS_DOMAIN_ID=25' >> ~/.bashrc`
 `source ~/.bashrc`
 
 # Step 2: SSH into RELBot with IP found on screen:
 
-`ssh -X pi@192.168.0.106`
+`ssh -X pi@192.168.0.100`
 
 `ramforpresident`
 
@@ -18,7 +18,7 @@ image/jpeg,width=320,height=240,framerate=30/1 ! \
 jpegdec ! videoconvert ! \
 x264enc tune=zerolatency bitrate=800 speed-preset=ultrafast ! \
 rtph264pay config-interval=1 pt=96 ! \
-udpsink host=192.168.0.105 port=5000
+udpsink host=192.168.0.101 port=5000
 ```
 
 # Step 4: Start DEMO script (in SSH)
